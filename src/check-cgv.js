@@ -59,6 +59,7 @@ export function normalizeShowtime(item) {
     endTime: String(item.endTime || ''),
     totalSeats: Number(item.totalSeats || 0),
     remainingSeats: Number(item.remainingSeats || 0),
+    seats: Array.isArray(item.seats) ? item.seats : undefined,
   };
 }
 
@@ -111,14 +112,74 @@ export function matchesTarget(showtime, target, config = {}) {
   return true;
 }
 
+function seatRow(seat) {
+  return String(seat.row || seat.seatRow || seat.rowName || seat.seatRowName || '').trim().toUpperCase();
+}
+
+function seatNumber(seat) {
+  const value = seat.number ?? seat.seatNo ?? seat.seatNumber ?? seat.col ?? seat.column;
+  const match = String(value || '').match(/\d+/);
+  return match ? Number(match[0]) : NaN;
+}
+
+function seatIsAvailable(seat) {
+  if (typeof seat.available === 'boolean') return seat.available;
+  if (typeof seat.isAvailable === 'boolean') return seat.isAvailable;
+  if (typeof seat.reserved === 'boolean') return !seat.reserved;
+  if (typeof seat.sold === 'boolean') return !seat.sold;
+
+  const state = String(seat.state || seat.status || seat.seatState || seat.SEAT_STATE || '').trim().toUpperCase();
+  if (!state) return false;
+  return ['Y', 'AVAILABLE', 'FREE', 'EMPTY', 'N'].includes(state);
+}
+
+function desiredSeatRanges(target) {
+  return target.desiredAdjacentSeats?.ranges || [];
+}
+
+export function findDesiredAdjacentSeatPairs(seats = [], target = {}) {
+  const availableByRow = new Map();
+
+  for (const seat of seats) {
+    if (!seatIsAvailable(seat)) continue;
+    const row = seatRow(seat);
+    const number = seatNumber(seat);
+    if (!row || Number.isNaN(number)) continue;
+    if (!availableByRow.has(row)) availableByRow.set(row, new Set());
+    availableByRow.get(row).add(number);
+  }
+
+  const pairs = [];
+  for (const range of desiredSeatRanges(target)) {
+    const rows = (range.rows || []).map((row) => String(row).toUpperCase());
+    const from = Number(range.from);
+    const to = Number(range.to);
+    if (!rows.length || Number.isNaN(from) || Number.isNaN(to)) continue;
+
+    for (const row of rows) {
+      const numbers = availableByRow.get(row);
+      if (!numbers) continue;
+      for (let number = from; number < to; number += 1) {
+        if (numbers.has(number) && numbers.has(number + 1)) {
+          pairs.push({ row, seats: [`${row}${number}`, `${row}${number + 1}`], key: `${row}${number}-${row}${number + 1}` });
+        }
+      }
+    }
+  }
+
+  return pairs;
+}
+
 export function diffSnapshots(previousState, currentShowtimes, config, nowIso) {
   const previousShowtimes = previousState.showtimes || {};
   const previousTargetDates = previousState.targetDates || {};
+  const previousSeatPairs = previousState.seatPairs || {};
   const notifiedEvents = previousState.notifiedEvents || {};
   const firstRun = Object.keys(previousShowtimes).length === 0 && !previousState.lastCheckedAt;
   const events = [];
   const nextShowtimes = {};
   const nextTargetDates = {};
+  const nextSeatPairs = {};
 
   for (const showtime of currentShowtimes) {
     nextShowtimes[showtime.key] = {
@@ -150,6 +211,21 @@ export function diffSnapshots(previousState, currentShowtimes, config, nowIso) {
       if (!firstRun && shouldNotifyTarget && !previous && target.notifyOn?.newShowtime) {
         events.push({ type: 'newShowtime', target, showtime });
       }
+
+      if (target.notifyOn?.desiredSeatPair && Array.isArray(showtime.seats)) {
+        const currentPairs = findDesiredAdjacentSeatPairs(showtime.seats, target);
+        const previousPairsForShowtime = previousSeatPairs[showtime.key];
+        nextSeatPairs[showtime.key] = Object.fromEntries(currentPairs.map((pair) => [pair.key, nowIso]));
+
+        if (!firstRun && shouldNotifyTarget && previousPairsForShowtime) {
+          for (const pair of currentPairs) {
+            if (!previousPairsForShowtime[pair.key]) {
+              events.push({ type: 'desiredSeatPair', target, showtime, pair });
+            }
+          }
+        }
+      }
+
       if (!previous) continue;
 
       const wasSoldOut = Number(previous.remainingSeats || 0) === 0;
@@ -195,6 +271,7 @@ export function diffSnapshots(previousState, currentShowtimes, config, nowIso) {
       lastCheckedAt: nowIso,
       showtimes: nextShowtimes,
       targetDates: nextTargetDates,
+      seatPairs: nextSeatPairs,
       notifiedEvents,
     },
   };
@@ -204,10 +281,14 @@ export function mergeUnscannedState(previousState, nextState, scannedDates) {
   const scanned = new Set(scannedDates);
   const mergedShowtimes = { ...nextState.showtimes };
   const mergedTargetDates = structuredClone(nextState.targetDates || {});
+  const mergedSeatPairs = structuredClone(nextState.seatPairs || {});
 
   for (const [key, showtime] of Object.entries(previousState.showtimes || {})) {
     if (!scanned.has(showtime.playDate)) {
       mergedShowtimes[key] = showtime;
+      if (previousState.seatPairs?.[key] && !mergedSeatPairs[key]) {
+        mergedSeatPairs[key] = previousState.seatPairs[key];
+      }
     }
   }
 
@@ -224,6 +305,7 @@ export function mergeUnscannedState(previousState, nextState, scannedDates) {
     ...nextState,
     showtimes: mergedShowtimes,
     targetDates: mergedTargetDates,
+    seatPairs: mergedSeatPairs,
   };
 }
 
@@ -232,6 +314,7 @@ function makeEventKey(event) {
   const showtimeKey = event.showtime?.key || '';
   if (event.type === 'seatIncrease') return `${event.type}|${event.target.id}|${showtimeKey}|${event.previousSeats}->${event.currentSeats}`;
   if (event.type === 'seatReopened') return `${event.type}|${event.target.id}|${showtimeKey}|${event.currentSeats}`;
+  if (event.type === 'desiredSeatPair') return `${event.type}|${event.target.id}|${showtimeKey}|${event.pair.key}`;
   return `${event.type}|${event.target.id}|${showtimeKey}`;
 }
 
@@ -295,6 +378,7 @@ function eventTitle(event, prefix) {
   if (event.type === 'test') return `${prefix} 테스트 알림`;
   if (event.type === 'newDate') return `${prefix} ${targetName} ${formatDateForMessage(event.playDate)} 예매 가능일자 추가`;
   if (event.type === 'newShowtime') return `${prefix} ${event.showtime.movieName} ${formatDateForMessage(event.showtime.playDate)} ${event.showtime.startTime} 새 예매 가능 회차`;
+  if (event.type === 'desiredSeatPair') return `${prefix} ${event.showtime.movieName} ${event.showtime.startTime} 지정 좌석 연속 2석`;
   if (event.type === 'seatReopened') return `${prefix} ${event.showtime.movieName} ${event.showtime.startTime} 매진 회차 좌석 재오픈`;
   return `${prefix} ${event.showtime.movieName} ${event.showtime.startTime} 잔여석 증가`;
 }
@@ -325,6 +409,7 @@ function eventBody(event) {
     s.screenName || s.screenType ? `상영관: ${[s.screenName, s.screenType].filter(Boolean).join(' ')}` : `상영관: 프로필 매칭${screenLabel}`,
     `일시: ${formatDateForMessage(s.playDate)} ${s.startTime}-${s.endTime}`,
     `잔여석: ${s.remainingSeats}/${s.totalSeats}`,
+    event.type === 'desiredSeatPair' ? `좌석: ${event.pair.seats.join(', ')}` : '',
     event.previousSeats === undefined ? '' : `이전 잔여석: ${event.previousSeats}`,
   ]
     .filter(Boolean)

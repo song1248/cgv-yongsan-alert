@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { diffSnapshots, makeShowtimeKey, mergeUnscannedState, normalizeShowtime } from '../src/check-cgv.js';
+import { diffSnapshots, findDesiredAdjacentSeatPairs, makeShowtimeKey, mergeUnscannedState, normalizeShowtime } from '../src/check-cgv.js';
 
 const config = {
   behavior: { suppressFirstRunNotifications: true, suppressNewTargetInitialNotifications: true },
@@ -23,6 +23,28 @@ const config = {
         newShowtime: true,
         seatReopened: true,
         seatIncrease: true,
+      },
+    },
+  ],
+};
+
+const desiredSeatConfig = {
+  ...config,
+  targets: [
+    {
+      ...config.targets[0],
+      desiredAdjacentSeats: {
+        ranges: [
+          { rows: ['H', 'I'], from: 13, to: 31 },
+          { rows: ['J', 'K', 'L'], from: 11, to: 34 },
+        ],
+      },
+      notifyOn: {
+        newDate: false,
+        newShowtime: true,
+        seatReopened: false,
+        seatIncrease: false,
+        desiredSeatPair: true,
       },
     },
   ],
@@ -128,5 +150,69 @@ describe('diffSnapshots', () => {
     const newShowtimes = result.events.filter((event) => event.type === 'newShowtime');
     assert.equal(newShowtimes.length, 1);
     assert.equal(newShowtimes[0].showtime.totalSeats, 624);
+  });
+
+  it('finds desired adjacent seat pairs inside configured ranges only', () => {
+    const pairs = findDesiredAdjacentSeatPairs(
+      [
+        { row: 'H', number: 12, available: true },
+        { row: 'H', number: 13, available: true },
+        { row: 'H', number: 14, available: true },
+        { row: 'H', number: 31, available: true },
+        { row: 'H', number: 32, available: true },
+        { row: 'J', number: 10, available: true },
+        { row: 'J', number: 11, available: true },
+        { row: 'J', number: 12, available: true },
+        { row: 'K', number: 20, available: false },
+        { row: 'K', number: 21, available: true },
+      ],
+      desiredSeatConfig.targets[0],
+    );
+
+    assert.deepEqual(
+      pairs.map((pair) => pair.key),
+      ['H13-H14', 'J11-J12'],
+    );
+  });
+
+  it('baselines desired adjacent seat pairs when no previous seat-pair snapshot exists', () => {
+    const current = showtime({
+      seats: [
+        { row: 'J', number: 20, available: true },
+        { row: 'J', number: 21, available: true },
+      ],
+    });
+    const previous = {
+      lastCheckedAt: 'before',
+      showtimes: { [current.key]: { ...current, seats: undefined } },
+      targetDates: { wanted: { '20260817': 'before' } },
+      notifiedEvents: {},
+    };
+
+    const result = diffSnapshots(previous, [current], desiredSeatConfig, 'now');
+    assert.equal(result.events.some((event) => event.type === 'desiredSeatPair'), false);
+    assert.equal(Boolean(result.nextState.seatPairs[current.key]['J20-J21']), true);
+  });
+
+  it('detects newly available desired adjacent seat pairs', () => {
+    const current = showtime({
+      seats: [
+        { row: 'J', number: 20, available: true },
+        { row: 'J', number: 21, available: true },
+        { row: 'J', number: 22, available: true },
+      ],
+    });
+    const previous = {
+      lastCheckedAt: 'before',
+      showtimes: { [current.key]: { ...current, seats: undefined } },
+      seatPairs: { [current.key]: { 'J20-J21': 'before' } },
+      targetDates: { wanted: { '20260817': 'before' } },
+      notifiedEvents: {},
+    };
+
+    const result = diffSnapshots(previous, [current], desiredSeatConfig, 'now');
+    const seatPairEvents = result.events.filter((event) => event.type === 'desiredSeatPair');
+    assert.equal(seatPairEvents.length, 1);
+    assert.equal(seatPairEvents[0].pair.key, 'J21-J22');
   });
 });

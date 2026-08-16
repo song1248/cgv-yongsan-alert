@@ -38,11 +38,18 @@
       "movieNameIncludes": ["오디세이"],
       "screenProfile": "yongsan-imax",
       "minRemainingSeats": 1,
+      "desiredAdjacentSeats": {
+        "ranges": [
+          { "rows": ["H", "I"], "from": 13, "to": 31 },
+          { "rows": ["J", "K", "L"], "from": 11, "to": 34 }
+        ]
+      },
       "notifyOn": {
-        "newDate": true,
+        "newDate": false,
         "newShowtime": true,
-        "seatReopened": true,
-        "seatIncrease": true
+        "seatReopened": false,
+        "seatIncrease": false,
+        "desiredSeatPair": true
       }
     }
   ]

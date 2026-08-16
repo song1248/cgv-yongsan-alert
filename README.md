@@ -1,6 +1,6 @@
 # CGV 용산 예매 알림
 
-CGV 용산아이파크몰(`0013`) 시간표를 5분마다 확인해서 원하는 영화의 새 회차, 매진 회차 재오픈, 잔여석 증가를 GitHub Issue로 알립니다.
+CGV 용산아이파크몰(`0013`) 시간표를 5분마다 확인해서 원하는 영화의 새 예매 가능 회차를 GitHub Issue와 이메일로 알립니다. 좌석표 데이터 소스가 제공되면 지정 구역의 연속 2좌석 출현도 알립니다.
 
 가까운 7일은 매 실행마다 확인하고, 8~14일 범위는 공개 API 호출 제한을 피하기 위해 12회마다 한 번, 즉 약 1시간마다 확인합니다.
 
@@ -22,11 +22,18 @@ CGV 용산아이파크몰(`0013`) 시간표를 5분마다 확인해서 원하는
   "movieNameIncludes": ["스파이더맨"],
   "screenProfile": "yongsan-imax",
   "minRemainingSeats": 1,
+  "desiredAdjacentSeats": {
+    "ranges": [
+      { "rows": ["H", "I"], "from": 13, "to": 31 },
+      { "rows": ["J", "K", "L"], "from": 11, "to": 34 }
+    ]
+  },
   "notifyOn": {
-    "newDate": true,
+    "newDate": false,
     "newShowtime": true,
-    "seatReopened": true,
-    "seatIncrease": true
+    "seatReopened": false,
+    "seatIncrease": false,
+    "desiredSeatPair": true
   }
 }
 ```
@@ -44,14 +51,14 @@ npm run watch
 
 ## 알림 조건
 
-- `newDate`: 이전에 없던 예매 가능 날짜가 생김
 - `newShowtime`: 원하는 영화의 새 예매 가능 회차가 생김
-- `seatReopened`: 잔여석이 `0`에서 `1 이상`으로 바뀜
-- `seatIncrease`: 잔여석이 이전보다 증가함
+- `desiredSeatPair`: 지정한 좌석 범위 안에서 같은 행 연속 2좌석이 새로 가능해짐
 
 첫 실행은 기존 시간표를 모두 알리지 않고 `data/state.json`만 초기화합니다. 새 target을 처음 활성화했을 때도 기존 회차는 초기 상태로만 저장하고, 이후 변화부터 알립니다.
 
-기본 설정은 알림 폭주를 줄이기 위해 잔여석 증가 중에서도 `0 -> 1 이상`으로 바뀐 경우만 알립니다. 일반적인 `3석 -> 4석` 같은 증가까지 받고 싶으면 `behavior.notifySeatIncreaseFromSoldOutOnly`를 `false`로 바꾸면 됩니다.
+현재 운영 설정은 `newDate`, `seatReopened`, `seatIncrease` 숫자 기반 알림을 끕니다. 매진 회차가 다시 열렸더라도 지정 좌석 연속 2석이 없으면 좌석 알림을 보내지 않습니다.
+
+주의: 현재 `mcp.aka.page` CGV API는 회차별 잔여석 수까지만 제공하고, `H13` 같은 좌석 번호 단위 좌석표는 제공하지 않습니다. `desiredSeatPair` 로직은 좌석표 데이터가 `showtime.seats`로 들어오는 데이터 소스가 연결되면 동작합니다.
 
 ## 테스트 알림
 
