@@ -77,7 +77,7 @@ describe('diffSnapshots', () => {
     };
     const result = diffSnapshots(previous, [current], config, 'now');
     assert.equal(result.events.some((event) => event.type === 'seatReopened'), true);
-    assert.equal(result.events.some((event) => event.type === 'seatIncrease'), true);
+    assert.equal(result.events.some((event) => event.type === 'seatIncrease'), false);
   });
 
   it('preserves unscanned future dates during frequent scans', () => {

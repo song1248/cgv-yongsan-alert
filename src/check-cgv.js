@@ -133,6 +133,7 @@ export function diffSnapshots(previousState, currentShowtimes, config, nowIso) {
         !firstRun &&
         shouldNotifyTarget &&
         increased &&
+        !(wasSoldOut && target.notifyOn?.seatReopened) &&
         target.notifyOn?.seatIncrease &&
         (!increaseFromSoldOutOnly || wasSoldOut)
       ) {
