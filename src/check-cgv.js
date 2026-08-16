@@ -449,6 +449,11 @@ async function createGitHubIssue(event, config) {
 }
 
 function emailRecipients() {
+  if (process.env.TEST_NOTIFICATION === 'true') {
+    const testRecipients = splitCsv(process.env.TEST_EMAIL_RECIPIENTS);
+    if (testRecipients.length > 0) return testRecipients;
+  }
+
   return splitCsv(process.env.EMAIL_RECIPIENTS);
 }
 
