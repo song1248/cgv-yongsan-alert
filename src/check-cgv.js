@@ -31,6 +31,23 @@ export function formatDateForMessage(yyyymmdd) {
   return `${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}`;
 }
 
+function formatKstDateTime(date = new Date()) {
+  return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(date);
+}
+
+function cgvBookingUrl() {
+  return 'https://www.cgv.co.kr/ticket/';
+}
+
 export function makeShowtimeKey(item) {
   return [
     item.theaterCode,
@@ -376,20 +393,27 @@ async function fetchAllTimetables(config, dates) {
 function eventTitle(event, prefix) {
   const targetName = event.target.name || event.target.id;
   if (event.type === 'test') return `${prefix} 테스트 알림`;
-  if (event.type === 'newDate') return `${prefix} ${targetName} ${formatDateForMessage(event.playDate)} 예매 가능일자 추가`;
-  if (event.type === 'newShowtime') return `${prefix} ${event.showtime.movieName} ${formatDateForMessage(event.showtime.playDate)} ${event.showtime.startTime} 새 예매 가능 회차`;
-  if (event.type === 'desiredSeatPair') return `${prefix} ${event.showtime.movieName} ${event.showtime.startTime} 지정 좌석 연속 2석`;
-  if (event.type === 'seatReopened') return `${prefix} ${event.showtime.movieName} ${event.showtime.startTime} 매진 회차 좌석 재오픈`;
-  return `${prefix} ${event.showtime.movieName} ${event.showtime.startTime} 잔여석 증가`;
+  if (event.type === 'newDate') return `${prefix} [새 예매일] ${targetName} ${formatDateForMessage(event.playDate)}`;
+  if (event.type === 'newShowtime') {
+    const s = event.showtime;
+    return `${prefix} [새 회차] ${s.movieName} ${formatDateForMessage(s.playDate)} ${s.startTime}`;
+  }
+  if (event.type === 'desiredSeatPair') {
+    const s = event.showtime;
+    return `${prefix} [원하는 좌석] ${s.movieName} ${formatDateForMessage(s.playDate)} ${s.startTime}`;
+  }
+  if (event.type === 'seatReopened') return `${prefix} [좌석 재오픈] ${event.showtime.movieName} ${event.showtime.startTime}`;
+  return `${prefix} [잔여석 증가] ${event.showtime.movieName} ${event.showtime.startTime}`;
 }
 
 function eventBody(event) {
   if (event.type === 'test') {
     return [
-      '정상 동작 확인용 테스트 알림입니다.',
+      '알림 사유: 정상 동작 확인용 테스트',
       `대상: ${event.target.name || event.target.id}`,
       `극장: ${event.showtime.theaterName}`,
-      `생성 시각: ${new Date().toISOString()}`,
+      `확인 시각: ${formatKstDateTime()} KST`,
+      `예매 링크: ${cgvBookingUrl()}`,
     ].join('\n');
   }
 
@@ -397,12 +421,27 @@ function eventBody(event) {
     const lines = event.showtimes
       .slice(0, 20)
       .map((s) => `- ${s.movieName} ${s.startTime}-${s.endTime} 잔여 ${s.remainingSeats}/${s.totalSeats}`);
-    return [`대상: ${event.target.name || event.target.id}`, `날짜: ${formatDateForMessage(event.playDate)}`, '', ...lines].join('\n');
+    return [
+      '알림 사유: 새 예매 가능일자가 감지되었습니다.',
+      `대상: ${event.target.name || event.target.id}`,
+      `날짜: ${formatDateForMessage(event.playDate)}`,
+      `확인 시각: ${formatKstDateTime()} KST`,
+      `예매 링크: ${cgvBookingUrl()}`,
+      '',
+      ...lines,
+    ].join('\n');
   }
 
   const s = event.showtime;
   const screenLabel = event.target.screenProfile ? ` (${event.target.screenProfile})` : '';
+  const reasonByType = {
+    newShowtime: '새 예매 가능 회차가 감지되었습니다.',
+    desiredSeatPair: '지정 구역에 연속 2석이 감지되었습니다.',
+    seatReopened: '매진이던 회차에 좌석이 다시 생겼습니다.',
+    seatIncrease: '기존 회차의 잔여석이 증가했습니다.',
+  };
   return [
+    `알림 사유: ${reasonByType[event.type] || '예매 상태 변경이 감지되었습니다.'}`,
     `대상: ${event.target.name || event.target.id}`,
     `영화: ${s.movieName}`,
     `극장: ${s.theaterName}`,
@@ -411,6 +450,8 @@ function eventBody(event) {
     `잔여석: ${s.remainingSeats}/${s.totalSeats}`,
     event.type === 'desiredSeatPair' ? `좌석: ${event.pair.seats.join(', ')}` : '',
     event.previousSeats === undefined ? '' : `이전 잔여석: ${event.previousSeats}`,
+    `확인 시각: ${formatKstDateTime()} KST`,
+    `예매 링크: ${cgvBookingUrl()}`,
   ]
     .filter(Boolean)
     .join('\n');
