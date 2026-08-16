@@ -294,8 +294,8 @@ function eventTitle(event, prefix) {
   const targetName = event.target.name || event.target.id;
   if (event.type === 'test') return `${prefix} 테스트 알림`;
   if (event.type === 'newDate') return `${prefix} ${targetName} ${formatDateForMessage(event.playDate)} 예매 가능일자 추가`;
-  if (event.type === 'newShowtime') return `${prefix} ${event.showtime.movieName} ${formatDateForMessage(event.showtime.playDate)} ${event.showtime.startTime} 새 회차`;
-  if (event.type === 'seatReopened') return `${prefix} ${event.showtime.movieName} ${event.showtime.startTime} 좌석 재오픈`;
+  if (event.type === 'newShowtime') return `${prefix} ${event.showtime.movieName} ${formatDateForMessage(event.showtime.playDate)} ${event.showtime.startTime} 새 예매 가능 회차`;
+  if (event.type === 'seatReopened') return `${prefix} ${event.showtime.movieName} ${event.showtime.startTime} 매진 회차 좌석 재오픈`;
   return `${prefix} ${event.showtime.movieName} ${event.showtime.startTime} 잔여석 증가`;
 }
 
