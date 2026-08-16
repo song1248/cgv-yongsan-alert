@@ -225,14 +225,30 @@ describe('diffSnapshots', () => {
     assert.equal(seatPairEvents[0].pair.key, 'J21-J22');
   });
 
-  it('builds theater and date selected CGV links', () => {
+  it('builds movie, theater, date, and time selected CGV ticket links', () => {
     const event = {
       type: 'newShowtime',
       target: desiredSeatConfig.targets[0],
       showtime: showtime({ theaterCode: '0013', playDate: '20260817' }),
     };
 
-    assert.equal(cgvBookingUrl(event), 'https://www.cgv.co.kr/reserve/show-times/?areacode=01&theaterCode=0013&date=20260817');
+    assert.equal(
+      cgvBookingUrl(event),
+      'https://www.cgv.co.kr/ticket/?MOVIE_CD=30001323&MOVIE_CD_GROUP=30001323&PLAY_YMD=20260817&THEATER_CD=0013&PLAY_START_TM=1830&AREA_CD=01',
+    );
+  });
+
+  it('adds screen code to CGV ticket links when available', () => {
+    const event = {
+      type: 'newShowtime',
+      target: desiredSeatConfig.targets[0],
+      showtime: showtime({ theaterCode: '0013', playDate: '20260817', screenCode: '001' }),
+    };
+
+    assert.equal(
+      cgvBookingUrl(event),
+      'https://www.cgv.co.kr/ticket/?MOVIE_CD=30001323&MOVIE_CD_GROUP=30001323&PLAY_YMD=20260817&THEATER_CD=0013&PLAY_START_TM=1830&AREA_CD=01&SCREEN_CD=001',
+    );
   });
 
   it('combines multiple events into one email message', () => {

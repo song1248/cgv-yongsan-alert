@@ -48,6 +48,22 @@ export function cgvBookingUrl(event) {
   const showtime = event?.showtime;
   const theaterCode = showtime?.theaterCode || event?.target?.theaterCode;
   const playDate = showtime?.playDate || event?.playDate;
+  const movieCode = showtime?.movieCode;
+  const startTime = showtime?.startTime ? String(showtime.startTime).replace(':', '') : '';
+  const screenCode = showtime?.screenCode || showtime?.screenCd || showtime?.SCREEN_CD;
+  if (movieCode && theaterCode && playDate && startTime) {
+    const params = new URLSearchParams({
+      MOVIE_CD: movieCode,
+      MOVIE_CD_GROUP: movieCode,
+      PLAY_YMD: playDate,
+      THEATER_CD: theaterCode,
+      PLAY_START_TM: startTime,
+      AREA_CD: '01',
+    });
+    if (screenCode) params.set('SCREEN_CD', screenCode);
+    return `https://www.cgv.co.kr/ticket/?${params.toString()}`;
+  }
+
   if (theaterCode && playDate) {
     return `https://www.cgv.co.kr/reserve/show-times/?areacode=01&theaterCode=${encodeURIComponent(theaterCode)}&date=${encodeURIComponent(playDate)}`;
   }
@@ -76,6 +92,7 @@ export function normalizeShowtime(item) {
     movieName: String(item.movieName || ''),
     theaterCode: String(item.theaterCode || ''),
     theaterName: String(item.theaterName || ''),
+    screenCode: String(item.screenCode || item.screenCd || item.SCREEN_CD || ''),
     screenName: String(item.screenName || item.screenNm || item.auditoriumName || item.auditoriumNm || ''),
     screenType: String(item.screenType || item.screenTypeName || item.screenTypeNm || item.ratingName || item.ratingNm || ''),
     playDate: String(item.playDate || ''),
