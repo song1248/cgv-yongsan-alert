@@ -48,6 +48,8 @@ npm run watch
 
 첫 실행은 기존 시간표를 모두 알리지 않고 `data/state.json`만 초기화합니다. 새 target을 처음 활성화했을 때도 기존 회차는 초기 상태로만 저장하고, 이후 변화부터 알립니다.
 
+기본 설정은 알림 폭주를 줄이기 위해 잔여석 증가 중에서도 `0 -> 1 이상`으로 바뀐 경우만 알립니다. 일반적인 `3석 -> 4석` 같은 증가까지 받고 싶으면 `behavior.notifySeatIncreaseFromSoldOutOnly`를 `false`로 바꾸면 됩니다.
+
 ## 테스트 알림
 
 GitHub Actions에서 **CGV Watch** workflow를 수동 실행할 때 `testNotification`을 `true`로 선택하면 실제 변화가 없어도 테스트 Issue를 하나 생성합니다.

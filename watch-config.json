@@ -20,7 +20,7 @@
   "behavior": {
     "suppressFirstRunNotifications": true,
     "suppressNewTargetInitialNotifications": true,
-    "notifySeatIncreaseFromSoldOutOnly": false
+    "notifySeatIncreaseFromSoldOutOnly": true
   },
   "targets": [
     {
