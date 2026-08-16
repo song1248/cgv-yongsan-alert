@@ -67,13 +67,26 @@ GitHub Actions에서 **CGV Watch** workflow를 수동 실행할 때 `testNotific
 cp .env.example .env
 ```
 
-GitHub Actions에서 실행할 때는 저장소의 **Settings > Secrets and variables > Actions**에 등록합니다. `RESEND_API_KEY`는 반드시 Secret에 넣습니다. Repository Variables는 Actions 로그에 값이 그대로 출력될 수 있어서 API key에는 쓰면 안 됩니다. `EMAIL_FROM`, `EMAIL_RECIPIENTS`는 Secret 또는 Variables로 등록할 수 있습니다.
+GitHub Actions에서 실행할 때는 저장소의 **Settings > Secrets and variables > Actions**에 등록합니다. `GMAIL_APP_PASSWORD`, `GMAIL_USER`, `RESEND_API_KEY`는 Secret에 넣습니다. Repository Variables는 Actions 로그에 값이 그대로 출력될 수 있어서 비밀번호나 API key에는 쓰면 안 됩니다. `EMAIL_PROVIDER`, `EMAIL_FROM`, `EMAIL_RECIPIENTS`는 Secret 또는 Variables로 등록할 수 있습니다.
 
 ## 이메일 알림
 
-Resend를 사용하려면 `.env` 또는 GitHub Actions 설정에 아래 값을 등록합니다.
+Gmail을 사용하려면 `.env` 또는 GitHub Actions 설정에 아래 값을 등록합니다.
 
 ```text
+EMAIL_PROVIDER=gmail
+GMAIL_USER=your@gmail.com
+GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
+EMAIL_FROM=your@gmail.com
+EMAIL_RECIPIENTS=user1@example.com,user2@example.com
+```
+
+GitHub Actions에서는 `GMAIL_USER`, `GMAIL_APP_PASSWORD`를 Secret으로 등록합니다. `EMAIL_FROM`은 생략하거나 `GMAIL_USER`와 같은 주소로 둡니다. Gmail은 발신 주소를 인증된 Gmail 계정으로 다시 쓸 수 있습니다.
+
+Resend를 사용하려면 아래 값을 등록합니다.
+
+```text
+EMAIL_PROVIDER=resend
 RESEND_API_KEY=re_...
 EMAIL_FROM=CGV Alert <noreply@your-verified-domain.com>
 EMAIL_RECIPIENTS=user1@example.com,user2@example.com

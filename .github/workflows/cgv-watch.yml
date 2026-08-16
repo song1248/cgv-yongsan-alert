@@ -46,7 +46,10 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           TEST_NOTIFICATION: ${{ inputs.testNotification || 'false' }}
           BASELINE_ONLY: ${{ inputs.baselineOnly || 'false' }}
+          EMAIL_PROVIDER: ${{ secrets.EMAIL_PROVIDER || vars.EMAIL_PROVIDER }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM || vars.EMAIL_FROM }}
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS || vars.EMAIL_RECIPIENTS }}
 

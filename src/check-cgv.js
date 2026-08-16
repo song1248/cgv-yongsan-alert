@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import tls from 'node:tls';
 import { fileURLToPath } from 'node:url';
 
 const DEFAULT_CONFIG = new URL('../watch-config.json', import.meta.url);
@@ -369,6 +370,108 @@ function emailRecipients() {
     .filter(Boolean);
 }
 
+function emailProvider() {
+  return (process.env.EMAIL_PROVIDER || '').trim().toLowerCase();
+}
+
+function encodeHeader(value) {
+  if (/^[\x00-\x7F]*$/.test(value)) return value;
+  return `=?UTF-8?B?${Buffer.from(value, 'utf8').toString('base64')}?=`;
+}
+
+function dotStuff(text) {
+  return text.replace(/\r?\n/g, '\r\n').replace(/^\./gm, '..');
+}
+
+function createSmtpClient({ host, port }) {
+  const socket = tls.connect({ host, port, servername: host });
+  socket.setEncoding('utf8');
+
+  let buffer = '';
+  const pending = [];
+
+  function parseResponses() {
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const match = line.match(/^(\d{3})([ -])(.*)$/);
+      if (!match || match[2] !== ' ') continue;
+      const waiter = pending.shift();
+      if (waiter) waiter({ code: Number(match[1]), line });
+    }
+  }
+
+  socket.on('data', (chunk) => {
+    buffer += chunk;
+    parseResponses();
+  });
+
+  function waitForResponse() {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('SMTP response timeout')), 15000);
+      pending.push((response) => {
+        clearTimeout(timeout);
+        resolve(response);
+      });
+    });
+  }
+
+  async function expect(expectedCodes, command) {
+    if (command) socket.write(`${command}\r\n`);
+    const response = await waitForResponse();
+    const codes = Array.isArray(expectedCodes) ? expectedCodes : [expectedCodes];
+    if (!codes.includes(response.code)) {
+      throw new Error(`SMTP command failed: ${command || '<greeting>'}: ${response.line}`);
+    }
+    return response;
+  }
+
+  return {
+    async send(command, expectedCodes) {
+      return expect(expectedCodes, command);
+    },
+    async greeting() {
+      return expect(220);
+    },
+    end() {
+      socket.end();
+    },
+  };
+}
+
+async function sendSmtpEmail({ host, port, user, pass, from, to, subject, text }) {
+  const client = createSmtpClient({ host, port });
+
+  try {
+    await client.greeting();
+    await client.send('EHLO github-actions', 250);
+    await client.send('AUTH LOGIN', 334);
+    await client.send(Buffer.from(user).toString('base64'), 334);
+    await client.send(Buffer.from(pass).toString('base64'), 235);
+    await client.send(`MAIL FROM:<${from}>`, 250);
+    await client.send(`RCPT TO:<${to}>`, [250, 251]);
+    await client.send('DATA', 354);
+    await client.send(
+      [
+        `From: ${from}`,
+        `To: ${to}`,
+        `Subject: ${encodeHeader(subject)}`,
+        'MIME-Version: 1.0',
+        'Content-Type: text/plain; charset=UTF-8',
+        'Content-Transfer-Encoding: 8bit',
+        '',
+        dotStuff(text),
+        '.',
+      ].join('\r\n'),
+      250,
+    );
+    await client.send('QUIT', 221);
+  } finally {
+    client.end();
+  }
+}
+
 async function sendResendEmail(event, config) {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM;
@@ -407,10 +510,68 @@ async function sendResendEmail(event, config) {
   }
 }
 
+async function sendGmailEmail(event, config) {
+  const user = process.env.GMAIL_USER;
+  const pass = process.env.GMAIL_APP_PASSWORD;
+  const from = process.env.EMAIL_FROM || user;
+  const recipients = emailRecipients();
+
+  if (!user || !pass || recipients.length === 0) {
+    console.log(`Gmail skipped; missing GMAIL_USER, GMAIL_APP_PASSWORD, or EMAIL_RECIPIENTS for ${event.eventKey}`);
+    return;
+  }
+
+  const subject = eventTitle(event, config.notification?.githubIssue?.titlePrefix || '[CGV]');
+  const text = `${eventBody(event)}\n\nEvent key: ${event.eventKey}`;
+
+  for (const to of recipients) {
+    try {
+      await sendSmtpEmail({
+        host: 'smtp.gmail.com',
+        port: 465,
+        user,
+        pass,
+        from,
+        to,
+        subject,
+        text,
+      });
+      console.log(`Gmail sent to ${to} for ${event.eventKey}`);
+    } catch (error) {
+      console.warn(`Gmail failed for ${to}: ${error.message}`);
+    }
+  }
+}
+
+async function sendEmail(event, config) {
+  const provider = emailProvider();
+  if (provider === 'gmail') {
+    await sendGmailEmail(event, config);
+    return;
+  }
+
+  if (provider === 'resend') {
+    await sendResendEmail(event, config);
+    return;
+  }
+
+  if (process.env.GMAIL_USER || process.env.GMAIL_APP_PASSWORD) {
+    await sendGmailEmail(event, config);
+    return;
+  }
+
+  if (process.env.RESEND_API_KEY) {
+    await sendResendEmail(event, config);
+    return;
+  }
+
+  console.log(`Email skipped; missing email provider settings for ${event.eventKey}`);
+}
+
 async function notify(events, config) {
   for (const event of events) {
     await createGitHubIssue(event, config);
-    await sendResendEmail(event, config);
+    await sendEmail(event, config);
     console.log(`Notified ${event.type}: ${event.eventKey}`);
   }
 }
