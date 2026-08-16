@@ -104,3 +104,34 @@ GitHub Actions에서는 `RESEND_API_KEY`를 Secret으로, `EMAIL_FROM`과 `EMAIL
 수신자는 쉼표로 구분합니다. 메일 주소 노출을 피하기 위해 수신자별로 한 통씩 따로 보냅니다.
 
 여러 명에게 보내려면 `EMAIL_FROM`의 도메인이 Resend에서 verified 상태여야 합니다. 검증되지 않은 도메인을 쓰면 GitHub Issue 알림은 생성되지만 이메일은 Resend 403 오류로 건너뜁니다.
+
+## 카카오톡 알림
+
+KakaoTalk Message API를 추가 알림 채널로 사용할 수 있습니다. 이 기능은 카카오톡 채널 친구 전체 발송이 아니라, Kakao Developers 앱에 연결된 사용자/친구에게 메시지를 보내는 방식입니다.
+
+GitHub Actions에는 아래 값을 등록합니다.
+
+```text
+Variables:
+KAKAO_ENABLED=true
+KAKAO_SEND_TO_ME=false
+
+Secrets:
+KAKAO_REST_API_KEY=...
+KAKAO_REFRESH_TOKEN=...
+KAKAO_RECEIVER_UUIDS=uuid1,uuid2
+```
+
+`KAKAO_ACCESS_TOKEN`도 Secret으로 넣을 수 있지만 access token은 만료가 짧으므로, 장기 실행에는 `KAKAO_REFRESH_TOKEN`을 넣고 매 실행마다 access token을 갱신하는 방식을 사용합니다. 앱에 Client secret 사용이 켜져 있으면 `KAKAO_CLIENT_SECRET`도 Secret으로 등록합니다.
+
+친구에게 보내려면 Kakao Developers에서 아래 작업이 필요합니다.
+
+1. Kakao Developers 앱 생성 또는 기존 앱 사용
+2. Kakao Login 활성화
+3. 동의항목에서 `talk_message` 설정
+4. 친구 목록/친구 메시지 권한 신청
+5. 수신자들이 해당 앱에 카카오 로그인으로 연결되고 필요한 동의 완료
+6. Friends picker 또는 친구 목록 조회 API로 수신자 `uuid` 확보
+7. `KAKAO_RECEIVER_UUIDS`에 쉼표로 구분해 등록
+
+한 번에 보낼 수 있는 친구는 최대 5명입니다. 권한 심사 전에는 앱 팀 멤버 대상 테스트만 가능할 수 있습니다.

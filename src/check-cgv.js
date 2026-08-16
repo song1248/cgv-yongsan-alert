@@ -449,14 +449,23 @@ async function createGitHubIssue(event, config) {
 }
 
 function emailRecipients() {
-  return (process.env.EMAIL_RECIPIENTS || '')
-    .split(',')
-    .map((email) => email.trim())
-    .filter(Boolean);
+  return splitCsv(process.env.EMAIL_RECIPIENTS);
 }
 
 function emailProvider() {
   return (process.env.EMAIL_PROVIDER || '').trim().toLowerCase();
+}
+
+function splitCsv(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function truncateText(value, maxLength) {
+  const text = String(value || '');
+  return text.length <= maxLength ? text : `${text.slice(0, Math.max(0, maxLength - 1))}…`;
 }
 
 function encodeHeader(value) {
@@ -653,10 +662,142 @@ async function sendEmail(event, config) {
   console.log(`Email skipped; missing email provider settings for ${event.eventKey}`);
 }
 
+function kakaoEnabled() {
+  return (process.env.KAKAO_ENABLED || '').trim().toLowerCase() === 'true';
+}
+
+function kakaoReceiverUuids() {
+  return splitCsv(process.env.KAKAO_RECEIVER_UUIDS);
+}
+
+function kakaoSendToMeEnabled() {
+  return (process.env.KAKAO_SEND_TO_ME || '').trim().toLowerCase() === 'true';
+}
+
+async function getKakaoAccessToken() {
+  const existingAccessToken = process.env.KAKAO_ACCESS_TOKEN;
+  if (existingAccessToken) return existingAccessToken;
+
+  const clientId = process.env.KAKAO_REST_API_KEY;
+  const refreshToken = process.env.KAKAO_REFRESH_TOKEN;
+  if (!clientId || !refreshToken) return '';
+
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    client_id: clientId,
+    refresh_token: refreshToken,
+  });
+  if (process.env.KAKAO_CLIENT_SECRET) {
+    body.set('client_secret', process.env.KAKAO_CLIENT_SECRET);
+  }
+
+  const response = await fetch('https://kauth.kakao.com/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' },
+    body,
+  });
+
+  const text = await response.text();
+  if (!response.ok) {
+    console.warn(`Kakao token refresh failed: ${response.status} ${text.slice(0, 300)}`);
+    return '';
+  }
+
+  try {
+    const payload = JSON.parse(text);
+    if (payload.refresh_token) {
+      console.warn('Kakao returned a new refresh token; update KAKAO_REFRESH_TOKEN secret manually.');
+    }
+    return payload.access_token || '';
+  } catch {
+    console.warn(`Kakao token refresh response parse failed: ${text.slice(0, 120)}`);
+    return '';
+  }
+}
+
+function kakaoTemplateObject(event, config) {
+  const title = eventTitle(event, config.notification?.githubIssue?.titlePrefix || '[CGV]');
+  const body = eventBody(event).split('\n').filter(Boolean).slice(0, 4).join('\n');
+  const repository = process.env.GITHUB_REPOSITORY || '';
+  const link = repository ? `https://github.com/${repository}/issues` : 'https://github.com';
+
+  return {
+    object_type: 'text',
+    text: truncateText(`${title}\n${body}`, 200),
+    link: {
+      web_url: link,
+      mobile_web_url: link,
+    },
+    button_title: '자세히 보기',
+  };
+}
+
+async function postKakaoMessage({ accessToken, url, body }) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8',
+    },
+    body,
+  });
+
+  const text = await response.text();
+  if (!response.ok) {
+    console.warn(`Kakao message failed: ${response.status} ${text.slice(0, 300)}`);
+    return;
+  }
+
+  console.log(`Kakao message sent: ${text.slice(0, 300)}`);
+}
+
+async function sendKakaoMessage(event, config) {
+  if (!kakaoEnabled()) return;
+
+  const receiverUuids = kakaoReceiverUuids();
+  const sendToMe = kakaoSendToMeEnabled();
+  if (!sendToMe && receiverUuids.length === 0) {
+    console.log(`Kakao skipped; missing KAKAO_RECEIVER_UUIDS for ${event.eventKey}`);
+    return;
+  }
+
+  const accessToken = await getKakaoAccessToken();
+  if (!accessToken) {
+    console.log(`Kakao skipped; missing KAKAO_ACCESS_TOKEN or KAKAO_REFRESH_TOKEN for ${event.eventKey}`);
+    return;
+  }
+
+  const templateObject = kakaoTemplateObject(event, config);
+
+  if (sendToMe) {
+    const body = new URLSearchParams({
+      template_object: JSON.stringify(templateObject),
+    });
+    await postKakaoMessage({
+      accessToken,
+      url: 'https://kapi.kakao.com/v2/api/talk/memo/default/send',
+      body,
+    });
+  }
+
+  if (receiverUuids.length > 0) {
+    const body = new URLSearchParams({
+      receiver_uuids: JSON.stringify(receiverUuids.slice(0, 5)),
+      template_object: JSON.stringify(templateObject),
+    });
+    await postKakaoMessage({
+      accessToken,
+      url: 'https://kapi.kakao.com/v1/api/talk/friends/message/default/send',
+      body,
+    });
+  }
+}
+
 async function notify(events, config) {
   for (const event of events) {
     await createGitHubIssue(event, config);
     await sendEmail(event, config);
+    await sendKakaoMessage(event, config);
     console.log(`Notified ${event.type}: ${event.eventKey}`);
   }
 }
