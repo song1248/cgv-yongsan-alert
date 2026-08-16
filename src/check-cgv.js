@@ -399,8 +399,11 @@ async function sendResendEmail(event, config) {
 
     if (!response.ok) {
       const body = await response.text();
-      throw new Error(`Resend email failed for ${to}: ${response.status} ${body.slice(0, 300)}`);
+      console.warn(`Resend email failed for ${to}: ${response.status} ${body.slice(0, 300)}`);
+      continue;
     }
+
+    console.log(`Email sent to ${to} for ${event.eventKey}`);
   }
 }
 
