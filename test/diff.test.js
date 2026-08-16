@@ -26,6 +26,8 @@ const config = {
       name: 'Wanted',
       enabled: true,
       movieNameIncludes: ['오디세이'],
+      ticketAreaCode: '13',
+      screenCode: '018',
       minRemainingSeats: 1,
       notifyOn: {
         newDate: true,
@@ -234,7 +236,7 @@ describe('diffSnapshots', () => {
 
     assert.equal(
       cgvBookingUrl(event),
-      'https://www.cgv.co.kr/ticket/?MOVIE_CD=30001323&MOVIE_CD_GROUP=30001323&PLAY_YMD=20260817&THEATER_CD=0013&PLAY_START_TM=1830&AREA_CD=01',
+      'https://www.cgv.co.kr/ticket/?MOVIE_CD=30001323&MOVIE_CD_GROUP=30001323&PLAY_YMD=20260817&THEATER_CD=0013&PLAY_START_TM=1830&AREA_CD=13&SCREEN_CD=018',
     );
   });
 
@@ -247,7 +249,7 @@ describe('diffSnapshots', () => {
 
     assert.equal(
       cgvBookingUrl(event),
-      'https://www.cgv.co.kr/ticket/?MOVIE_CD=30001323&MOVIE_CD_GROUP=30001323&PLAY_YMD=20260817&THEATER_CD=0013&PLAY_START_TM=1830&AREA_CD=01&SCREEN_CD=001',
+      'https://www.cgv.co.kr/ticket/?MOVIE_CD=30001323&MOVIE_CD_GROUP=30001323&PLAY_YMD=20260817&THEATER_CD=0013&PLAY_START_TM=1830&AREA_CD=13&SCREEN_CD=001',
     );
   });
 

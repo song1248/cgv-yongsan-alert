@@ -37,6 +37,8 @@
       "enabled": true,
       "movieNameIncludes": ["오디세이"],
       "screenProfile": "yongsan-imax",
+      "ticketAreaCode": "13",
+      "screenCode": "018",
       "minRemainingSeats": 1,
       "desiredAdjacentSeats": {
         "ranges": [

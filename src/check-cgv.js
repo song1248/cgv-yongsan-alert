@@ -50,7 +50,8 @@ export function cgvBookingUrl(event) {
   const playDate = showtime?.playDate || event?.playDate;
   const movieCode = showtime?.movieCode;
   const startTime = showtime?.startTime ? String(showtime.startTime).replace(':', '') : '';
-  const screenCode = showtime?.screenCode || showtime?.screenCd || showtime?.SCREEN_CD;
+  const areaCode = showtime?.ticketAreaCode || showtime?.areaCode || event?.target?.ticketAreaCode || '01';
+  const screenCode = showtime?.screenCode || showtime?.screenCd || showtime?.SCREEN_CD || event?.target?.screenCode;
   if (movieCode && theaterCode && playDate && startTime) {
     const params = new URLSearchParams({
       MOVIE_CD: movieCode,
@@ -58,7 +59,7 @@ export function cgvBookingUrl(event) {
       PLAY_YMD: playDate,
       THEATER_CD: theaterCode,
       PLAY_START_TM: startTime,
-      AREA_CD: '01',
+      AREA_CD: areaCode,
     });
     if (screenCode) params.set('SCREEN_CD', screenCode);
     return `https://www.cgv.co.kr/ticket/?${params.toString()}`;
@@ -69,6 +70,15 @@ export function cgvBookingUrl(event) {
   }
 
   return 'https://www.cgv.co.kr/ticket/';
+}
+
+function cgvScheduleUrl(event) {
+  const showtime = event?.showtime;
+  const theaterCode = showtime?.theaterCode || event?.target?.theaterCode;
+  const playDate = showtime?.playDate || event?.playDate || '';
+  if (!theaterCode) return 'https://m.cgv.co.kr/WebApp/Reservation/Schedule.aspx';
+
+  return `https://m.cgv.co.kr/WebApp/Reservation/Schedule.aspx?tc=${encodeURIComponent(theaterCode)}&rc=01&ymd=${encodeURIComponent(playDate)}&fst=&fet=&fsrc=`;
 }
 
 export function makeShowtimeKey(item) {
@@ -438,6 +448,7 @@ function eventBody(event) {
       `극장: ${event.showtime.theaterName}`,
       `확인 시각: ${formatKstDateTime()} KST`,
       `예매 링크: ${cgvBookingUrl(event)}`,
+      `시간표 링크: ${cgvScheduleUrl(event)}`,
     ].join('\n');
   }
 
@@ -451,6 +462,7 @@ function eventBody(event) {
       `날짜: ${formatDateForMessage(event.playDate)}`,
       `확인 시각: ${formatKstDateTime()} KST`,
       `예매 링크: ${cgvBookingUrl(event)}`,
+      `시간표 링크: ${cgvScheduleUrl(event)}`,
       '',
       ...lines,
     ].join('\n');
@@ -476,6 +488,7 @@ function eventBody(event) {
     event.previousSeats === undefined ? '' : `이전 잔여석: ${event.previousSeats}`,
     `확인 시각: ${formatKstDateTime()} KST`,
     `예매 링크: ${cgvBookingUrl(event)}`,
+    `시간표 링크: ${cgvScheduleUrl(event)}`,
   ]
     .filter(Boolean)
     .join('\n');
