@@ -46,7 +46,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           TEST_NOTIFICATION: ${{ inputs.testNotification || 'false' }}
           BASELINE_ONLY: ${{ inputs.baselineOnly || 'false' }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY || vars.RESEND_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM || vars.EMAIL_FROM }}
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS || vars.EMAIL_RECIPIENTS }}
 

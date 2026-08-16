@@ -67,17 +67,19 @@ GitHub Actions에서 **CGV Watch** workflow를 수동 실행할 때 `testNotific
 cp .env.example .env
 ```
 
-GitHub Actions에서 실행할 때는 저장소의 **Settings > Secrets and variables > Actions**에 같은 이름으로 등록합니다. `RESEND_API_KEY`는 가능하면 Secret에 넣고, 노출되어도 괜찮은 값만 Variables에 넣는 것을 권장합니다. 현재 workflow는 `secrets.*`가 없으면 `vars.*`를 읽도록 되어 있습니다.
+GitHub Actions에서 실행할 때는 저장소의 **Settings > Secrets and variables > Actions**에 등록합니다. `RESEND_API_KEY`는 반드시 Secret에 넣습니다. Repository Variables는 Actions 로그에 값이 그대로 출력될 수 있어서 API key에는 쓰면 안 됩니다. `EMAIL_FROM`, `EMAIL_RECIPIENTS`는 Secret 또는 Variables로 등록할 수 있습니다.
 
 ## 이메일 알림
 
-Resend를 사용하려면 `.env` 또는 GitHub Actions Secrets/Variables에 아래 값을 등록합니다.
+Resend를 사용하려면 `.env` 또는 GitHub Actions 설정에 아래 값을 등록합니다.
 
 ```text
 RESEND_API_KEY=re_...
 EMAIL_FROM=CGV Alert <noreply@your-verified-domain.com>
 EMAIL_RECIPIENTS=user1@example.com,user2@example.com
 ```
+
+GitHub Actions에서는 `RESEND_API_KEY`를 Secret으로, `EMAIL_FROM`과 `EMAIL_RECIPIENTS`를 Variables 또는 Secrets로 등록합니다.
 
 수신자는 쉼표로 구분합니다. 메일 주소 노출을 피하기 위해 수신자별로 한 통씩 따로 보냅니다.
 
