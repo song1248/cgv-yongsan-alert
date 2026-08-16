@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { diffSnapshots, makeShowtimeKey, normalizeShowtime } from '../src/check-cgv.js';
+import { diffSnapshots, makeShowtimeKey, mergeUnscannedState, normalizeShowtime } from '../src/check-cgv.js';
 
 const config = {
   behavior: { suppressFirstRunNotifications: true, suppressNewTargetInitialNotifications: true },
@@ -78,5 +78,29 @@ describe('diffSnapshots', () => {
     const result = diffSnapshots(previous, [current], config, 'now');
     assert.equal(result.events.some((event) => event.type === 'seatReopened'), true);
     assert.equal(result.events.some((event) => event.type === 'seatIncrease'), true);
+  });
+
+  it('preserves unscanned future dates during frequent scans', () => {
+    const near = showtime({ playDate: '20260817', startTime: '18:30' });
+    const far = showtime({ playDate: '20260827', startTime: '20:00' });
+    const previous = {
+      showtimes: {
+        [near.key]: near,
+        [far.key]: far,
+      },
+      targetDates: {
+        wanted: {
+          '20260817': 'before',
+          '20260827': 'before',
+        },
+      },
+    };
+    const next = {
+      showtimes: { [near.key]: { ...near, remainingSeats: 2 } },
+      targetDates: { wanted: { '20260817': 'now' } },
+    };
+    const merged = mergeUnscannedState(previous, next, ['20260817']);
+    assert.equal(Boolean(merged.showtimes[far.key]), true);
+    assert.equal(merged.targetDates.wanted['20260827'], 'before');
   });
 });

@@ -4,7 +4,9 @@
     "baseUrl": "https://mcp.aka.page",
     "theaterCode": "0013",
     "theaterName": "CGV 용산아이파크몰",
-    "lookaheadDays": 7,
+    "frequentLookaheadDays": 7,
+    "lookaheadDays": 14,
+    "fullScanEveryRuns": 12,
     "limit": 200,
     "delayMsBetweenDates": 1200
   },

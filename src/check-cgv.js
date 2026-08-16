@@ -168,6 +168,33 @@ export function diffSnapshots(previousState, currentShowtimes, config, nowIso) {
   };
 }
 
+export function mergeUnscannedState(previousState, nextState, scannedDates) {
+  const scanned = new Set(scannedDates);
+  const mergedShowtimes = { ...nextState.showtimes };
+  const mergedTargetDates = structuredClone(nextState.targetDates || {});
+
+  for (const [key, showtime] of Object.entries(previousState.showtimes || {})) {
+    if (!scanned.has(showtime.playDate)) {
+      mergedShowtimes[key] = showtime;
+    }
+  }
+
+  for (const [targetId, dates] of Object.entries(previousState.targetDates || {})) {
+    mergedTargetDates[targetId] ||= {};
+    for (const [date, seenAt] of Object.entries(dates || {})) {
+      if (!scanned.has(date)) {
+        mergedTargetDates[targetId][date] = seenAt;
+      }
+    }
+  }
+
+  return {
+    ...nextState,
+    showtimes: mergedShowtimes,
+    targetDates: mergedTargetDates,
+  };
+}
+
 function makeEventKey(event) {
   if (event.type === 'newDate') return `${event.type}|${event.target.id}|${event.playDate}`;
   const showtimeKey = event.showtime?.key || '';
@@ -203,20 +230,36 @@ async function fetchTimetableForDate(config, playDate) {
   return (payload.data?.timetable || []).map(normalizeShowtime);
 }
 
-async function fetchAllTimetables(config) {
+function planScanDates(config, previousState) {
+  const source = config.source || {};
+  const runCount = Number(previousState.runCount || 0) + 1;
+  const frequentDays = Number(source.frequentLookaheadDays || source.lookaheadDays || 7);
+  const lookaheadDays = Number(source.lookaheadDays || frequentDays);
+  const fullScanEveryRuns = Number(source.fullScanEveryRuns || 1);
+  const fullScan = fullScanEveryRuns <= 1 || runCount % fullScanEveryRuns === 0;
+  const days = fullScan ? lookaheadDays : Math.min(frequentDays, lookaheadDays);
+
+  return {
+    runCount,
+    fullScan,
+    dates: Array.from({ length: days }, (_, offset) => yyyymmddInKst(offset)),
+  };
+}
+
+async function fetchAllTimetables(config, dates) {
   const results = [];
-  const days = Number(config.source?.lookaheadDays || 7);
-  for (let offset = 0; offset < days; offset += 1) {
-    const playDate = yyyymmddInKst(offset);
+  for (let offset = 0; offset < dates.length; offset += 1) {
+    const playDate = dates[offset];
     const items = await fetchTimetableForDate(config, playDate);
     results.push(...items);
-    if (offset < days - 1) await sleep(Number(config.source?.delayMsBetweenDates || 0));
+    if (offset < dates.length - 1) await sleep(Number(config.source?.delayMsBetweenDates || 0));
   }
   return results;
 }
 
 function eventTitle(event, prefix) {
   const targetName = event.target.name || event.target.id;
+  if (event.type === 'test') return `${prefix} 테스트 알림`;
   if (event.type === 'newDate') return `${prefix} ${targetName} ${formatDateForMessage(event.playDate)} 예매 가능일자 추가`;
   if (event.type === 'newShowtime') return `${prefix} ${event.showtime.movieName} ${formatDateForMessage(event.showtime.playDate)} ${event.showtime.startTime} 새 회차`;
   if (event.type === 'seatReopened') return `${prefix} ${event.showtime.movieName} ${event.showtime.startTime} 좌석 재오픈`;
@@ -224,6 +267,15 @@ function eventTitle(event, prefix) {
 }
 
 function eventBody(event) {
+  if (event.type === 'test') {
+    return [
+      '정상 동작 확인용 테스트 알림입니다.',
+      `대상: ${event.target.name || event.target.id}`,
+      `극장: ${event.showtime.theaterName}`,
+      `생성 시각: ${new Date().toISOString()}`,
+    ].join('\n');
+  }
+
   if (event.type === 'newDate') {
     const lines = event.showtimes
       .slice(0, 20)
@@ -283,6 +335,25 @@ async function notify(events, config) {
   }
 }
 
+function createTestEvent(config) {
+  const now = new Date();
+  const target = (config.targets || []).find((item) => item.enabled) || { id: 'test', name: '테스트' };
+  return {
+    type: 'test',
+    target,
+    eventKey: `test|${now.toISOString()}`,
+    showtime: {
+      movieName: target.name || target.id,
+      theaterName: config.source?.theaterName || 'CGV',
+      playDate: yyyymmddInKst(0, now),
+      startTime: '00:00',
+      endTime: '00:00',
+      remainingSeats: 1,
+      totalSeats: 1,
+    },
+  };
+}
+
 function readJson(pathOrUrl) {
   return JSON.parse(readFileSync(pathOrUrl, 'utf8'));
 }
@@ -299,10 +370,20 @@ async function main() {
   const previousState = existsSync(statePath) ? readJson(statePath) : { version: 1, showtimes: {}, targetDates: {}, notifiedEvents: {} };
 
   const nowIso = new Date().toISOString();
-  const currentShowtimes = await fetchAllTimetables(config);
-  const { events, nextState } = diffSnapshots(previousState, currentShowtimes, config, nowIso);
+  const scan = planScanDates(config, previousState);
+  const currentShowtimes = await fetchAllTimetables(config, scan.dates);
+  const diff = diffSnapshots(previousState, currentShowtimes, config, nowIso);
+  const nextState = mergeUnscannedState(previousState, diff.nextState, scan.dates);
+  nextState.runCount = scan.runCount;
 
-  console.log(`Fetched ${currentShowtimes.length} showtimes, detected ${events.length} events`);
+  const events = [...diff.events];
+  if (process.env.TEST_NOTIFICATION === 'true') {
+    events.push(createTestEvent(config));
+  }
+
+  console.log(
+    `Fetched ${currentShowtimes.length} showtimes across ${scan.dates.length} days (${scan.fullScan ? 'full' : 'frequent'} scan), detected ${events.length} events`,
+  );
   await notify(events, config);
   writeJson(statePath, nextState);
 }

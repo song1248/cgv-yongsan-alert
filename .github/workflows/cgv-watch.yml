@@ -4,6 +4,15 @@ on:
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
+    inputs:
+      testNotification:
+        description: "Create a test GitHub Issue without waiting for CGV changes"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 permissions:
   contents: write
@@ -27,6 +36,7 @@ jobs:
         run: npm run watch
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          TEST_NOTIFICATION: ${{ inputs.testNotification || 'false' }}
 
       - name: Commit state
         run: |
