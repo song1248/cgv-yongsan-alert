@@ -362,9 +362,52 @@ async function createGitHubIssue(event, config) {
   }
 }
 
+function emailRecipients() {
+  return (process.env.EMAIL_RECIPIENTS || '')
+    .split(',')
+    .map((email) => email.trim())
+    .filter(Boolean);
+}
+
+async function sendResendEmail(event, config) {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM;
+  const recipients = emailRecipients();
+
+  if (!apiKey || !from || recipients.length === 0) {
+    console.log(`Email skipped; missing RESEND_API_KEY, EMAIL_FROM, or EMAIL_RECIPIENTS for ${event.eventKey}`);
+    return;
+  }
+
+  const subject = eventTitle(event, config.notification?.githubIssue?.titlePrefix || '[CGV]');
+  const text = `${eventBody(event)}\n\nEvent key: ${event.eventKey}`;
+
+  for (const to of recipients) {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from,
+        to,
+        subject,
+        text,
+      }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Resend email failed for ${to}: ${response.status} ${body.slice(0, 300)}`);
+    }
+  }
+}
+
 async function notify(events, config) {
   for (const event of events) {
     await createGitHubIssue(event, config);
+    await sendResendEmail(event, config);
     console.log(`Notified ${event.type}: ${event.eventKey}`);
   }
 }
