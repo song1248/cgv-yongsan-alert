@@ -1,0 +1,38 @@
+{
+  "timezone": "Asia/Seoul",
+  "source": {
+    "baseUrl": "https://mcp.aka.page",
+    "theaterCode": "0013",
+    "theaterName": "CGV 용산아이파크몰",
+    "lookaheadDays": 7,
+    "limit": 200,
+    "delayMsBetweenDates": 1200
+  },
+  "notification": {
+    "githubIssue": {
+      "enabled": true,
+      "labels": [],
+      "titlePrefix": "[CGV 용산]"
+    }
+  },
+  "behavior": {
+    "suppressFirstRunNotifications": true,
+    "suppressNewTargetInitialNotifications": true,
+    "notifySeatIncreaseFromSoldOutOnly": false
+  },
+  "targets": [
+    {
+      "id": "sample-movie",
+      "name": "샘플 영화 조건",
+      "enabled": false,
+      "movieNameIncludes": ["원하는 영화명 일부"],
+      "minRemainingSeats": 1,
+      "notifyOn": {
+        "newDate": true,
+        "newShowtime": true,
+        "seatReopened": true,
+        "seatIncrease": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "name": "cgv-yongsan-alert",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "CGV Yongsan booking availability watcher",
+  "scripts": {
+    "check": "node --check src/check-cgv.js && node --test",
+    "watch": "node src/check-cgv.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
