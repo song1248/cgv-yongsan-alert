@@ -44,7 +44,14 @@ function formatKstDateTime(date = new Date()) {
   }).format(date);
 }
 
-function cgvBookingUrl() {
+export function cgvBookingUrl(event) {
+  const showtime = event?.showtime;
+  const theaterCode = showtime?.theaterCode || event?.target?.theaterCode;
+  const playDate = showtime?.playDate || event?.playDate;
+  if (theaterCode && playDate) {
+    return `https://www.cgv.co.kr/reserve/show-times/?areacode=01&theaterCode=${encodeURIComponent(theaterCode)}&date=${encodeURIComponent(playDate)}`;
+  }
+
   return 'https://www.cgv.co.kr/ticket/';
 }
 
@@ -413,7 +420,7 @@ function eventBody(event) {
       `대상: ${event.target.name || event.target.id}`,
       `극장: ${event.showtime.theaterName}`,
       `확인 시각: ${formatKstDateTime()} KST`,
-      `예매 링크: ${cgvBookingUrl()}`,
+      `예매 링크: ${cgvBookingUrl(event)}`,
     ].join('\n');
   }
 
@@ -426,7 +433,7 @@ function eventBody(event) {
       `대상: ${event.target.name || event.target.id}`,
       `날짜: ${formatDateForMessage(event.playDate)}`,
       `확인 시각: ${formatKstDateTime()} KST`,
-      `예매 링크: ${cgvBookingUrl()}`,
+      `예매 링크: ${cgvBookingUrl(event)}`,
       '',
       ...lines,
     ].join('\n');
@@ -451,10 +458,58 @@ function eventBody(event) {
     event.type === 'desiredSeatPair' ? `좌석: ${event.pair.seats.join(', ')}` : '',
     event.previousSeats === undefined ? '' : `이전 잔여석: ${event.previousSeats}`,
     `확인 시각: ${formatKstDateTime()} KST`,
-    `예매 링크: ${cgvBookingUrl()}`,
+    `예매 링크: ${cgvBookingUrl(event)}`,
   ]
     .filter(Boolean)
     .join('\n');
+}
+
+function eventTypeLabel(event) {
+  if (event.type === 'newDate') return '새 예매일';
+  if (event.type === 'newShowtime') return '새 회차';
+  if (event.type === 'desiredSeatPair') return '원하는 좌석';
+  if (event.type === 'seatReopened') return '좌석 재오픈';
+  if (event.type === 'seatIncrease') return '잔여석 증가';
+  if (event.type === 'test') return '테스트';
+  return '알림';
+}
+
+export function emailBatchSubject(events, config) {
+  const prefix = config.notification?.githubIssue?.titlePrefix || '[CGV]';
+  if (events.length === 1) return eventTitle(events[0], prefix);
+
+  const counts = new Map();
+  for (const event of events) {
+    const label = eventTypeLabel(event);
+    counts.set(label, (counts.get(label) || 0) + 1);
+  }
+  const summary = Array.from(counts, ([label, count]) => `${label} ${count}`).join(', ');
+  return `${prefix} 알림 ${events.length}건 (${summary})`;
+}
+
+export function emailBatchBody(events) {
+  if (events.length === 1) {
+    const event = events[0];
+    return `${eventBody(event)}\n\nEvent key: ${event.eventKey}`;
+  }
+
+  const lines = [
+    `알림 ${events.length}건이 한 번에 감지되었습니다.`,
+    `확인 시각: ${formatKstDateTime()} KST`,
+    '',
+  ];
+
+  events.forEach((event, index) => {
+    lines.push(`========== ${index + 1}. ${eventTypeLabel(event)} ==========`);
+    lines.push(eventTitle(event, '').trim());
+    lines.push('');
+    lines.push(eventBody(event));
+    lines.push('');
+    lines.push(`Event key: ${event.eventKey}`);
+    lines.push('');
+  });
+
+  return lines.join('\n').trim();
 }
 
 async function createGitHubIssue(event, config) {
@@ -612,18 +667,18 @@ async function sendSmtpEmail({ host, port, user, pass, from, to, subject, text }
   }
 }
 
-async function sendResendEmail(event, config) {
+async function sendResendEmail(events, config) {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM;
   const recipients = emailRecipients();
 
   if (!apiKey || !from || recipients.length === 0) {
-    console.log(`Email skipped; missing RESEND_API_KEY, EMAIL_FROM, or EMAIL_RECIPIENTS for ${event.eventKey}`);
+    console.log('Email skipped; missing RESEND_API_KEY, EMAIL_FROM, or EMAIL_RECIPIENTS');
     return;
   }
 
-  const subject = eventTitle(event, config.notification?.githubIssue?.titlePrefix || '[CGV]');
-  const text = `${eventBody(event)}\n\nEvent key: ${event.eventKey}`;
+  const subject = emailBatchSubject(events, config);
+  const text = emailBatchBody(events);
 
   for (const to of recipients) {
     const response = await fetch('https://api.resend.com/emails', {
@@ -646,23 +701,23 @@ async function sendResendEmail(event, config) {
       continue;
     }
 
-    console.log(`Email sent to ${to} for ${event.eventKey}`);
+    console.log(`Email sent to ${to} for ${events.length} event(s)`);
   }
 }
 
-async function sendGmailEmail(event, config) {
+async function sendGmailEmail(events, config) {
   const user = process.env.GMAIL_USER;
   const pass = process.env.GMAIL_APP_PASSWORD;
   const from = process.env.EMAIL_FROM || user;
   const recipients = emailRecipients();
 
   if (!user || !pass || recipients.length === 0) {
-    console.log(`Gmail skipped; missing GMAIL_USER, GMAIL_APP_PASSWORD, or EMAIL_RECIPIENTS for ${event.eventKey}`);
+    console.log('Gmail skipped; missing GMAIL_USER, GMAIL_APP_PASSWORD, or EMAIL_RECIPIENTS');
     return;
   }
 
-  const subject = eventTitle(event, config.notification?.githubIssue?.titlePrefix || '[CGV]');
-  const text = `${eventBody(event)}\n\nEvent key: ${event.eventKey}`;
+  const subject = emailBatchSubject(events, config);
+  const text = emailBatchBody(events);
 
   for (const to of recipients) {
     try {
@@ -676,36 +731,38 @@ async function sendGmailEmail(event, config) {
         subject,
         text,
       });
-      console.log(`Gmail sent to ${to} for ${event.eventKey}`);
+      console.log(`Gmail sent to ${to} for ${events.length} event(s)`);
     } catch (error) {
       console.warn(`Gmail failed for ${to}: ${error.message}`);
     }
   }
 }
 
-async function sendEmail(event, config) {
+async function sendEmail(events, config) {
+  if (events.length === 0) return;
+
   const provider = emailProvider();
   if (provider === 'gmail') {
-    await sendGmailEmail(event, config);
+    await sendGmailEmail(events, config);
     return;
   }
 
   if (provider === 'resend') {
-    await sendResendEmail(event, config);
+    await sendResendEmail(events, config);
     return;
   }
 
   if (process.env.GMAIL_USER || process.env.GMAIL_APP_PASSWORD) {
-    await sendGmailEmail(event, config);
+    await sendGmailEmail(events, config);
     return;
   }
 
   if (process.env.RESEND_API_KEY) {
-    await sendResendEmail(event, config);
+    await sendResendEmail(events, config);
     return;
   }
 
-  console.log(`Email skipped; missing email provider settings for ${event.eventKey}`);
+  console.log('Email skipped; missing email provider settings');
 }
 
 function kakaoEnabled() {
@@ -842,7 +899,11 @@ async function sendKakaoMessage(event, config) {
 async function notify(events, config) {
   for (const event of events) {
     await createGitHubIssue(event, config);
-    await sendEmail(event, config);
+  }
+
+  await sendEmail(events, config);
+
+  for (const event of events) {
     await sendKakaoMessage(event, config);
     console.log(`Notified ${event.type}: ${event.eventKey}`);
   }

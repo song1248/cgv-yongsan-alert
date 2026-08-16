@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { diffSnapshots, findDesiredAdjacentSeatPairs, makeShowtimeKey, mergeUnscannedState, normalizeShowtime } from '../src/check-cgv.js';
+import {
+  cgvBookingUrl,
+  diffSnapshots,
+  emailBatchBody,
+  emailBatchSubject,
+  findDesiredAdjacentSeatPairs,
+  makeShowtimeKey,
+  mergeUnscannedState,
+  normalizeShowtime,
+} from '../src/check-cgv.js';
 
 const config = {
   behavior: { suppressFirstRunNotifications: true, suppressNewTargetInitialNotifications: true },
@@ -214,5 +223,40 @@ describe('diffSnapshots', () => {
     const seatPairEvents = result.events.filter((event) => event.type === 'desiredSeatPair');
     assert.equal(seatPairEvents.length, 1);
     assert.equal(seatPairEvents[0].pair.key, 'J21-J22');
+  });
+
+  it('builds theater and date selected CGV links', () => {
+    const event = {
+      type: 'newShowtime',
+      target: desiredSeatConfig.targets[0],
+      showtime: showtime({ theaterCode: '0013', playDate: '20260817' }),
+    };
+
+    assert.equal(cgvBookingUrl(event), 'https://www.cgv.co.kr/reserve/show-times/?areacode=01&theaterCode=0013&date=20260817');
+  });
+
+  it('combines multiple events into one email message', () => {
+    const first = {
+      type: 'newShowtime',
+      target: desiredSeatConfig.targets[0],
+      eventKey: 'newShowtime|1',
+      showtime: showtime({ playDate: '20260817', startTime: '18:30' }),
+    };
+    const second = {
+      type: 'desiredSeatPair',
+      target: desiredSeatConfig.targets[0],
+      eventKey: 'desiredSeatPair|1',
+      showtime: showtime({ playDate: '20260817', startTime: '20:00' }),
+      pair: { seats: ['H13', 'H14'] },
+    };
+
+    const subject = emailBatchSubject([first, second], { notification: { githubIssue: { titlePrefix: '[CGV 용산]' } } });
+    const body = emailBatchBody([first, second]);
+
+    assert.equal(subject, '[CGV 용산] 알림 2건 (새 회차 1, 원하는 좌석 1)');
+    assert.match(body, /알림 2건이 한 번에 감지되었습니다/);
+    assert.match(body, /1\. 새 회차/);
+    assert.match(body, /2\. 원하는 좌석/);
+    assert.match(body, /좌석: H13, H14/);
   });
 });
