@@ -17,6 +17,14 @@
       "titlePrefix": "[CGV 용산]"
     }
   },
+  "screenProfiles": {
+    "yongsan-imax": {
+      "label": "용산 IMAX",
+      "theaterCode": "0013",
+      "screenNameIncludes": ["IMAX"],
+      "totalSeatsIn": [624]
+    }
+  },
   "behavior": {
     "suppressFirstRunNotifications": true,
     "suppressNewTargetInitialNotifications": true,
@@ -24,10 +32,11 @@
   },
   "targets": [
     {
-      "id": "odyssey",
-      "name": "오디세이",
+      "id": "odyssey-imax",
+      "name": "오디세이 IMAX",
       "enabled": true,
       "movieNameIncludes": ["오디세이"],
+      "screenProfile": "yongsan-imax",
       "minRemainingSeats": 1,
       "notifyOn": {
         "newDate": true,

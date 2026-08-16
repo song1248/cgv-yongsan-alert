@@ -20,6 +20,7 @@ CGV 용산아이파크몰(`0013`) 시간표를 5분마다 확인해서 원하는
   "name": "원하는 영화",
   "enabled": true,
   "movieNameIncludes": ["스파이더맨"],
+  "screenProfile": "yongsan-imax",
   "minRemainingSeats": 1,
   "notifyOn": {
     "newDate": true,
@@ -29,6 +30,8 @@ CGV 용산아이파크몰(`0013`) 시간표를 5분마다 확인해서 원하는
   }
 }
 ```
+
+현재 공개 API 응답은 상영관명을 주지 않는 경우가 있어 용산 IMAX는 `screenProfiles.yongsan-imax.totalSeatsIn: [624]`로 식별합니다. 나중에 데이터 소스가 상영관명/상영타입을 제공하면 `screenNameIncludes`가 먼저 적용됩니다.
 
 ## GitHub 토큰
 

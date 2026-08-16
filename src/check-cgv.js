@@ -36,6 +36,8 @@ export function makeShowtimeKey(item) {
     item.playDate,
     item.movieCode,
     item.movieName,
+    item.screenName || '',
+    item.screenType || '',
     item.startTime,
     item.endTime,
     item.totalSeats,
@@ -49,6 +51,8 @@ export function normalizeShowtime(item) {
     movieName: String(item.movieName || ''),
     theaterCode: String(item.theaterCode || ''),
     theaterName: String(item.theaterName || ''),
+    screenName: String(item.screenName || item.screenNm || item.auditoriumName || item.auditoriumNm || ''),
+    screenType: String(item.screenType || item.screenTypeName || item.screenTypeNm || item.ratingName || item.ratingNm || ''),
     playDate: String(item.playDate || ''),
     startTime: String(item.startTime || ''),
     endTime: String(item.endTime || ''),
@@ -69,10 +73,36 @@ function timeInRange(value, from, to) {
   return true;
 }
 
-export function matchesTarget(showtime, target) {
+function matchesScreenProfile(showtime, target, config) {
+  const screenProfile = target.screenProfile ? config.screenProfiles?.[target.screenProfile] : null;
+  if (!screenProfile) return true;
+  if (screenProfile.theaterCode && showtime.theaterCode !== String(screenProfile.theaterCode)) return false;
+
+  const screenText = `${showtime.screenName} ${showtime.screenType}`.trim();
+  if (screenProfile.screenNameIncludes?.length && screenText) {
+    return includesAll(screenText, screenProfile.screenNameIncludes);
+  }
+
+  if (screenProfile.totalSeatsIn?.length) {
+    return screenProfile.totalSeatsIn.map(Number).includes(showtime.totalSeats);
+  }
+
+  return true;
+}
+
+function matchesDirectScreenFilters(showtime, target) {
+  const screenText = `${showtime.screenName} ${showtime.screenType}`.trim();
+  if (target.screenNameIncludes?.length && !includesAll(screenText, target.screenNameIncludes)) return false;
+  if (target.totalSeatsIn?.length && !target.totalSeatsIn.map(Number).includes(showtime.totalSeats)) return false;
+  return true;
+}
+
+export function matchesTarget(showtime, target, config = {}) {
   if (!target.enabled) return false;
   if (target.movieNameIncludes?.length && !includesAll(showtime.movieName, target.movieNameIncludes)) return false;
   if (target.movieCode && showtime.movieCode !== String(target.movieCode)) return false;
+  if (!matchesScreenProfile(showtime, target, config)) return false;
+  if (!matchesDirectScreenFilters(showtime, target)) return false;
   if (target.dateFrom && showtime.playDate < target.dateFrom) return false;
   if (target.dateTo && showtime.playDate > target.dateTo) return false;
   if (!timeInRange(showtime.startTime, target.timeFrom, target.timeTo)) return false;
@@ -102,7 +132,7 @@ export function diffSnapshots(previousState, currentShowtimes, config, nowIso) {
     const targetFirstRun = !previousTargetDates[target.id];
     const suppressTargetFirstRun = config.behavior?.suppressNewTargetInitialNotifications !== false;
     const shouldNotifyTarget = !(targetFirstRun && suppressTargetFirstRun);
-    const targetShowtimes = currentShowtimes.filter((showtime) => matchesTarget(showtime, target));
+    const targetShowtimes = currentShowtimes.filter((showtime) => matchesTarget(showtime, target, config));
     const dates = new Set(targetShowtimes.map((showtime) => showtime.playDate));
     nextTargetDates[target.id] = Object.fromEntries([...dates].map((date) => [date, nowIso]));
 
@@ -285,10 +315,12 @@ function eventBody(event) {
   }
 
   const s = event.showtime;
+  const screenLabel = event.target.screenProfile ? ` (${event.target.screenProfile})` : '';
   return [
     `대상: ${event.target.name || event.target.id}`,
     `영화: ${s.movieName}`,
     `극장: ${s.theaterName}`,
+    s.screenName || s.screenType ? `상영관: ${[s.screenName, s.screenType].filter(Boolean).join(' ')}` : `상영관: 프로필 매칭${screenLabel}`,
     `일시: ${formatDateForMessage(s.playDate)} ${s.startTime}-${s.endTime}`,
     `잔여석: ${s.remainingSeats}/${s.totalSeats}`,
     event.previousSeats === undefined ? '' : `이전 잔여석: ${event.previousSeats}`,

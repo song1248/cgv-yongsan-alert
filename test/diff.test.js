@@ -4,6 +4,13 @@ import { diffSnapshots, makeShowtimeKey, mergeUnscannedState, normalizeShowtime 
 
 const config = {
   behavior: { suppressFirstRunNotifications: true, suppressNewTargetInitialNotifications: true },
+  screenProfiles: {
+    'yongsan-imax': {
+      theaterCode: '0013',
+      totalSeatsIn: [624],
+      screenNameIncludes: ['IMAX'],
+    },
+  },
   targets: [
     {
       id: 'wanted',
@@ -102,5 +109,24 @@ describe('diffSnapshots', () => {
     const merged = mergeUnscannedState(previous, next, ['20260817']);
     assert.equal(Boolean(merged.showtimes[far.key]), true);
     assert.equal(merged.targetDates.wanted['20260827'], 'before');
+  });
+
+  it('matches a screen profile by known seat count when screen name is not present', () => {
+    const imaxConfig = {
+      ...config,
+      targets: [{ ...config.targets[0], screenProfile: 'yongsan-imax' }],
+    };
+    const imax = showtime({ totalSeats: 624 });
+    const standard = showtime({ totalSeats: 223, startTime: '19:00' });
+    const previous = {
+      lastCheckedAt: 'before',
+      showtimes: {},
+      targetDates: { wanted: { '20260816': 'before' } },
+      notifiedEvents: {},
+    };
+    const result = diffSnapshots(previous, [imax, standard], imaxConfig, 'now');
+    const newShowtimes = result.events.filter((event) => event.type === 'newShowtime');
+    assert.equal(newShowtimes.length, 1);
+    assert.equal(newShowtimes[0].showtime.totalSeats, 624);
   });
 });
