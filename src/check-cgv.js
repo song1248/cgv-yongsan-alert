@@ -46,39 +46,16 @@ function formatKstDateTime(date = new Date()) {
 
 export function cgvBookingUrl(event) {
   const showtime = event?.showtime;
-  const theaterCode = showtime?.theaterCode || event?.target?.theaterCode;
-  const playDate = showtime?.playDate || event?.playDate;
-  const movieCode = showtime?.movieCode;
-  const startTime = showtime?.startTime ? String(showtime.startTime).replace(':', '') : '';
-  const areaCode = showtime?.ticketAreaCode || showtime?.areaCode || event?.target?.ticketAreaCode || '01';
-  const screenCode = showtime?.screenCode || showtime?.screenCd || showtime?.SCREEN_CD || event?.target?.screenCode;
-  if (movieCode && theaterCode && playDate && startTime) {
-    const params = new URLSearchParams({
-      MOVIE_CD: movieCode,
-      MOVIE_CD_GROUP: movieCode,
-      PLAY_YMD: playDate,
-      THEATER_CD: theaterCode,
-      PLAY_START_TM: startTime,
-      AREA_CD: areaCode,
-    });
-    if (screenCode) params.set('SCREEN_CD', screenCode);
-    return `https://www.cgv.co.kr/ticket/?${params.toString()}`;
+  const theaterName = showtime?.theaterName || event?.target?.theaterName;
+  if (theaterName) {
+    return `https://cgv.co.kr/cnm/movieBook/cinema?siteNm=${encodeURIComponent(theaterName.replace(/^CGV\s*/, ''))}`;
   }
 
-  if (theaterCode && playDate) {
-    return `https://www.cgv.co.kr/reserve/show-times/?areacode=01&theaterCode=${encodeURIComponent(theaterCode)}&date=${encodeURIComponent(playDate)}`;
-  }
-
-  return 'https://www.cgv.co.kr/ticket/';
+  return 'https://cgv.co.kr/cnm/movieBook';
 }
 
-function cgvScheduleUrl(event) {
-  const showtime = event?.showtime;
-  const theaterCode = showtime?.theaterCode || event?.target?.theaterCode;
-  const playDate = showtime?.playDate || event?.playDate || '';
-  if (!theaterCode) return 'https://m.cgv.co.kr/WebApp/Reservation/Schedule.aspx';
-
-  return `https://m.cgv.co.kr/WebApp/Reservation/Schedule.aspx?tc=${encodeURIComponent(theaterCode)}&rc=01&ymd=${encodeURIComponent(playDate)}&fst=&fet=&fsrc=`;
+function cgvMovieBookUrl() {
+  return 'https://cgv.co.kr/cnm/movieBook';
 }
 
 export function makeShowtimeKey(item) {
@@ -447,8 +424,8 @@ function eventBody(event) {
       `대상: ${event.target.name || event.target.id}`,
       `극장: ${event.showtime.theaterName}`,
       `확인 시각: ${formatKstDateTime()} KST`,
-      `예매 링크: ${cgvBookingUrl(event)}`,
-      `시간표 링크: ${cgvScheduleUrl(event)}`,
+      `예매 페이지: ${cgvBookingUrl(event)}`,
+      `전체 예매 페이지: ${cgvMovieBookUrl()}`,
     ].join('\n');
   }
 
@@ -461,8 +438,8 @@ function eventBody(event) {
       `대상: ${event.target.name || event.target.id}`,
       `날짜: ${formatDateForMessage(event.playDate)}`,
       `확인 시각: ${formatKstDateTime()} KST`,
-      `예매 링크: ${cgvBookingUrl(event)}`,
-      `시간표 링크: ${cgvScheduleUrl(event)}`,
+      `예매 페이지: ${cgvBookingUrl(event)}`,
+      `전체 예매 페이지: ${cgvMovieBookUrl()}`,
       '',
       ...lines,
     ].join('\n');
@@ -487,8 +464,8 @@ function eventBody(event) {
     event.type === 'desiredSeatPair' ? `좌석: ${event.pair.seats.join(', ')}` : '',
     event.previousSeats === undefined ? '' : `이전 잔여석: ${event.previousSeats}`,
     `확인 시각: ${formatKstDateTime()} KST`,
-    `예매 링크: ${cgvBookingUrl(event)}`,
-    `시간표 링크: ${cgvScheduleUrl(event)}`,
+    `예매 페이지: ${cgvBookingUrl(event)}`,
+    `전체 예매 페이지: ${cgvMovieBookUrl()}`,
   ]
     .filter(Boolean)
     .join('\n');
