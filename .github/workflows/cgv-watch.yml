@@ -13,6 +13,14 @@ on:
         options:
           - "false"
           - "true"
+      baselineOnly:
+        description: "Update state without creating notification issues"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 permissions:
   contents: write
@@ -37,6 +45,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           TEST_NOTIFICATION: ${{ inputs.testNotification || 'false' }}
+          BASELINE_ONLY: ${{ inputs.baselineOnly || 'false' }}
 
       - name: Commit state
         run: |

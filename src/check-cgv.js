@@ -267,7 +267,8 @@ function planScanDates(config, previousState) {
   const frequentDays = Number(source.frequentLookaheadDays || source.lookaheadDays || 7);
   const lookaheadDays = Number(source.lookaheadDays || frequentDays);
   const fullScanEveryRuns = Number(source.fullScanEveryRuns || 1);
-  const fullScan = fullScanEveryRuns <= 1 || runCount % fullScanEveryRuns === 0;
+  const forceFullScan = process.env.FORCE_FULL_SCAN === 'true' || process.env.BASELINE_ONLY === 'true';
+  const fullScan = forceFullScan || fullScanEveryRuns <= 1 || runCount % fullScanEveryRuns === 0;
   const days = fullScan ? lookaheadDays : Math.min(frequentDays, lookaheadDays);
 
   return {
@@ -409,7 +410,7 @@ async function main() {
   const nextState = mergeUnscannedState(previousState, diff.nextState, scan.dates);
   nextState.runCount = scan.runCount;
 
-  const events = [...diff.events];
+  const events = process.env.BASELINE_ONLY === 'true' ? [] : [...diff.events];
   if (process.env.TEST_NOTIFICATION === 'true') {
     events.push(createTestEvent(config));
   }

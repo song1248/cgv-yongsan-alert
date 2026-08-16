@@ -56,3 +56,5 @@ npm run watch
 ## 테스트 알림
 
 GitHub Actions에서 **CGV Watch** workflow를 수동 실행할 때 `testNotification`을 `true`로 선택하면 실제 변화가 없어도 테스트 Issue를 하나 생성합니다.
+
+감시 조건이나 조회 범위를 바꾼 직후 기존 회차를 기준값으로만 저장하고 싶으면 수동 실행에서 `baselineOnly`를 `true`로 선택합니다. 이 모드는 14일 전체를 조회하지만 알림 Issue는 만들지 않습니다.
