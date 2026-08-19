@@ -350,6 +350,10 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isRetryableStatus(status) {
+  return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
 async function fetchTimetableForDate(config, playDate) {
   const source = config.source;
   const url = new URL('/api/cgv/timetable', source.baseUrl);
@@ -357,20 +361,39 @@ async function fetchTimetableForDate(config, playDate) {
   url.searchParams.set('theaterCode', source.theaterCode);
   url.searchParams.set('limit', String(source.limit || 200));
 
-  const response = await fetch(url, {
-    headers: { Accept: 'application/json', 'User-Agent': 'cgv-yongsan-alert/0.1' },
-  });
+  const retryAttempts = Number(source.retryAttempts ?? 2);
+  const retryDelayMs = Number(source.retryDelayMs ?? 1500);
+  let lastError;
 
-  if (!response.ok) {
-    throw new Error(`CGV API failed for ${playDate}: ${response.status}`);
+  for (let attempt = 0; attempt <= retryAttempts; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        headers: { Accept: 'application/json', 'User-Agent': 'cgv-yongsan-alert/0.1' },
+      });
+
+      if (!response.ok) {
+        const error = new Error(`CGV API failed for ${playDate}: ${response.status}`);
+        error.retryable = isRetryableStatus(response.status);
+        throw error;
+      }
+
+      const payload = await response.json();
+      if (!payload?.success) {
+        const error = new Error(`CGV API returned unsuccessful response for ${playDate}`);
+        error.retryable = Boolean(payload?.diagnostics?.retryable);
+        throw error;
+      }
+
+      return (payload.data?.timetable || []).map(normalizeShowtime);
+    } catch (error) {
+      lastError = error;
+      const retryable = error.retryable || error.cause?.code || error.name === 'TypeError';
+      if (!retryable || attempt >= retryAttempts) break;
+      await sleep(retryDelayMs * (attempt + 1));
+    }
   }
 
-  const payload = await response.json();
-  if (!payload?.success) {
-    throw new Error(`CGV API returned unsuccessful response for ${playDate}`);
-  }
-
-  return (payload.data?.timetable || []).map(normalizeShowtime);
+  throw lastError;
 }
 
 function planScanDates(config, previousState) {
@@ -392,13 +415,26 @@ function planScanDates(config, previousState) {
 
 async function fetchAllTimetables(config, dates) {
   const results = [];
+  const fetchedDates = [];
+  const failedDates = [];
   for (let offset = 0; offset < dates.length; offset += 1) {
     const playDate = dates[offset];
-    const items = await fetchTimetableForDate(config, playDate);
-    results.push(...items);
+    try {
+      const items = await fetchTimetableForDate(config, playDate);
+      results.push(...items);
+      fetchedDates.push(playDate);
+    } catch (error) {
+      failedDates.push({ playDate, message: error.message });
+      console.warn(`CGV timetable skipped for ${playDate}: ${error.message}`);
+    }
     if (offset < dates.length - 1) await sleep(Number(config.source?.delayMsBetweenDates || 0));
   }
-  return results;
+
+  if (fetchedDates.length === 0 && dates.length > 0) {
+    throw new Error(`CGV API failed for all scan dates: ${failedDates.map((item) => `${item.playDate} ${item.message}`).join('; ')}`);
+  }
+
+  return { showtimes: results, fetchedDates, failedDates };
 }
 
 function eventTitle(event, prefix) {
@@ -952,9 +988,10 @@ async function main() {
 
   const nowIso = new Date().toISOString();
   const scan = planScanDates(config, previousState);
-  const currentShowtimes = await fetchAllTimetables(config, scan.dates);
+  const fetchResult = await fetchAllTimetables(config, scan.dates);
+  const currentShowtimes = fetchResult.showtimes;
   const diff = diffSnapshots(previousState, currentShowtimes, config, nowIso);
-  const nextState = mergeUnscannedState(previousState, diff.nextState, scan.dates);
+  const nextState = mergeUnscannedState(previousState, diff.nextState, fetchResult.fetchedDates);
   nextState.runCount = scan.runCount;
 
   const events = process.env.BASELINE_ONLY === 'true' ? [] : [...diff.events];
@@ -963,8 +1000,11 @@ async function main() {
   }
 
   console.log(
-    `Fetched ${currentShowtimes.length} showtimes across ${scan.dates.length} days (${scan.fullScan ? 'full' : 'frequent'} scan), detected ${events.length} events`,
+    `Fetched ${currentShowtimes.length} showtimes across ${fetchResult.fetchedDates.length}/${scan.dates.length} days (${scan.fullScan ? 'full' : 'frequent'} scan), detected ${events.length} events`,
   );
+  if (fetchResult.failedDates.length > 0) {
+    console.warn(`Skipped ${fetchResult.failedDates.length} failed date(s): ${fetchResult.failedDates.map((item) => item.playDate).join(', ')}`);
+  }
   await notify(events, config);
   writeJson(statePath, nextState);
 }
