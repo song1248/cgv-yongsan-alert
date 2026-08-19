@@ -7,6 +7,7 @@ import {
   emailBatchSubject,
   findDesiredAdjacentSeatPairs,
   makeShowtimeKey,
+  normalizeCgvDirectTimetableItem,
   mergeUnscannedState,
   normalizeShowtime,
 } from '../src/check-cgv.js';
@@ -263,5 +264,31 @@ describe('diffSnapshots', () => {
     assert.match(body, /1\. 새 회차/);
     assert.match(body, /2\. 원하는 좌석/);
     assert.match(body, /좌석: H13, H14/);
+  });
+
+  it('normalizes CGV direct timetable items', () => {
+    const item = normalizeCgvDirectTimetableItem({
+      movNo: '30001323',
+      movNm: '오디세이',
+      siteNo: '0013',
+      siteNm: 'CGV 용산아이파크몰',
+      scrnNo: '018',
+      scrnNm: 'IMAX관',
+      scnYmd: '20260826',
+      scnsrtTm: '930',
+      scnendTm: '1230',
+      stcnt: '624',
+      frSeatCnt: '42',
+    });
+
+    assert.equal(item.movieCode, '30001323');
+    assert.equal(item.movieName, '오디세이');
+    assert.equal(item.theaterCode, '0013');
+    assert.equal(item.screenName, 'IMAX관');
+    assert.equal(item.playDate, '20260826');
+    assert.equal(item.startTime, '09:30');
+    assert.equal(item.endTime, '12:30');
+    assert.equal(item.totalSeats, 624);
+    assert.equal(item.remainingSeats, 42);
   });
 });

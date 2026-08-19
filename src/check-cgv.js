@@ -1,9 +1,13 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHmac } from 'node:crypto';
 import tls from 'node:tls';
 import { fileURLToPath } from 'node:url';
 
 const DEFAULT_CONFIG = new URL('../watch-config.json', import.meta.url);
 const DEFAULT_STATE = new URL('../data/state.json', import.meta.url);
+const CGV_API_BASE_URL = 'https://api.cgv.co.kr';
+const CGV_COMPANY_CODE = 'A420';
+const CGV_SIGNING_SECRET = 'ydqXY0ocnFLmJGHr_zNzFcpjwAsXq_8JcBNURAkRscg';
 
 export function loadDotEnv(path = '.env') {
   if (!existsSync(path)) return;
@@ -354,19 +358,158 @@ function isRetryableStatus(status) {
   return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
 }
 
+function formatCgvTime(value) {
+  const text = String(value || '').padStart(4, '0');
+  return `${text.slice(0, 2)}:${text.slice(2, 4)}`;
+}
+
+function toNumber(value) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function cgvSignature(pathname, bodyText, timestamp) {
+  return createHmac('sha256', CGV_SIGNING_SECRET).update(`${timestamp}|${pathname}|${bodyText}`).digest('base64');
+}
+
+function cgvHeaders(pathname, bodyText = '') {
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  return {
+    Accept: 'application/json',
+    'Accept-Language': 'ko-KR',
+    'X-TIMESTAMP': timestamp,
+    'X-SIGNATURE': cgvSignature(pathname, bodyText, timestamp),
+  };
+}
+
+function encodeBasicAuth(value) {
+  return Buffer.from(`${value}:`).toString('base64');
+}
+
+async function requestByZyte(url, headers, timeoutMs) {
+  const apiKey = process.env.ZYTE_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error('CGV direct API was blocked and ZYTE_API_KEY is not configured');
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch('https://api.zyte.com/v1/extract', {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${encodeBasicAuth(apiKey)}`,
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        url,
+        httpRequestMethod: 'GET',
+        customHttpRequestHeaders: Object.entries(headers).map(([name, value]) => ({ name, value })),
+        httpResponseBody: true,
+        tags: { service: 'cgv-yongsan-alert' },
+      }),
+      signal: controller.signal,
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      const error = new Error(`Zyte API failed: ${response.status} ${payload.detail || payload.title || ''}`.trim());
+      error.retryable = isRetryableStatus(response.status);
+      throw error;
+    }
+    if (payload.statusCode === 401 || payload.statusCode === 403) {
+      throw new Error(`CGV direct API blocked through Zyte: ${payload.statusCode}`);
+    }
+    if (isRetryableStatus(payload.statusCode)) {
+      const error = new Error(`CGV direct API failed through Zyte: ${payload.statusCode}`);
+      error.retryable = true;
+      throw error;
+    }
+    if (!payload.httpResponseBody) {
+      throw new Error('Zyte response did not include CGV response body');
+    }
+    return JSON.parse(Buffer.from(payload.httpResponseBody, 'base64').toString('utf8'));
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function requestCgvDirect(pathname, searchParams, timeoutMs = 15000) {
+  const url = `${CGV_API_BASE_URL}${pathname}?${searchParams.toString()}`;
+  const headers = cgvHeaders(pathname);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, { headers, signal: controller.signal });
+    const text = await response.text();
+    if (response.ok) {
+      return JSON.parse(text);
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      return requestByZyte(url, headers, timeoutMs);
+    }
+
+    const error = new Error(`CGV direct API failed: ${response.status} ${text.slice(0, 160)}`);
+    error.retryable = isRetryableStatus(response.status);
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+export function normalizeCgvDirectTimetableItem(item) {
+  return normalizeShowtime({
+    scheduleId: `${item.scnYmd || ''}${item.siteNo || ''}${item.scnSseq || ''}`,
+    movieCode: item.movNo || '',
+    movieName: item.movNm || item.prodNm || '',
+    theaterCode: item.siteNo || '',
+    theaterName: item.siteNm || '',
+    screenCode: item.scrnNo || item.screenCd || item.SCREEN_CD || '',
+    screenName: item.scrnNm || item.screenNm || '',
+    screenType: item.rtctlScopNm || item.theaterKindNm || '',
+    playDate: item.scnYmd || '',
+    startTime: formatCgvTime(item.scnsrtTm),
+    endTime: formatCgvTime(item.scnendTm),
+    totalSeats: toNumber(item.stcnt),
+    remainingSeats: toNumber(item.frSeatCnt || item.frtmpSeatCnt),
+  });
+}
+
+async function fetchDirectTimetableForDate(config, playDate) {
+  const source = config.source;
+  const params = new URLSearchParams({
+    coCd: CGV_COMPANY_CODE,
+    siteNo: source.theaterCode,
+    scnYmd: playDate,
+    rtctlScopCd: source.rtctlScopCd || '08',
+  });
+  const payload = await requestCgvDirect('/cnm/atkt/searchMovScnInfo', params, Number(source.timeoutMs || 15000));
+  if (payload.statusCode !== undefined && payload.statusCode !== 0) {
+    throw new Error(`CGV direct API returned statusCode=${payload.statusCode}`);
+  }
+  return (Array.isArray(payload.data) ? payload.data : []).map(normalizeCgvDirectTimetableItem);
+}
+
 async function fetchTimetableForDate(config, playDate) {
   const source = config.source;
-  const url = new URL('/api/cgv/timetable', source.baseUrl);
-  url.searchParams.set('playDate', playDate);
-  url.searchParams.set('theaterCode', source.theaterCode);
-  url.searchParams.set('limit', String(source.limit || 200));
-
   const retryAttempts = Number(source.retryAttempts ?? 2);
   const retryDelayMs = Number(source.retryDelayMs ?? 1500);
+  const provider = (source.provider || '').trim();
   let lastError;
 
   for (let attempt = 0; attempt <= retryAttempts; attempt += 1) {
     try {
+      if (provider === 'cgv-direct') {
+        return fetchDirectTimetableForDate(config, playDate);
+      }
+
+      const url = new URL('/api/cgv/timetable', source.baseUrl);
+      url.searchParams.set('playDate', playDate);
+      url.searchParams.set('theaterCode', source.theaterCode);
+      url.searchParams.set('limit', String(source.limit || 200));
+
       const response = await fetch(url, {
         headers: { Accept: 'application/json', 'User-Agent': 'cgv-yongsan-alert/0.1' },
       });

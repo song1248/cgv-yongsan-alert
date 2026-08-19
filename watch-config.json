@@ -1,9 +1,13 @@
 {
   "timezone": "Asia/Seoul",
   "source": {
+    "provider": "cgv-direct",
     "baseUrl": "https://mcp.aka.page",
     "theaterCode": "0013",
     "theaterName": "CGV 용산아이파크몰",
+    "rtctlScopCd": "08",
+    "retryAttempts": 2,
+    "retryDelayMs": 1500,
     "frequentLookaheadDays": 7,
     "lookaheadDays": 14,
     "fullScanEveryRuns": 12,

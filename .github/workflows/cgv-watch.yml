@@ -58,6 +58,7 @@ jobs:
           EMAIL_FROM: ${{ secrets.EMAIL_FROM || vars.EMAIL_FROM }}
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS || vars.EMAIL_RECIPIENTS }}
           TEST_EMAIL_RECIPIENTS: ${{ secrets.TEST_EMAIL_RECIPIENTS || vars.TEST_EMAIL_RECIPIENTS }}
+          ZYTE_API_KEY: ${{ secrets.ZYTE_API_KEY }}
           KAKAO_ENABLED: ${{ secrets.KAKAO_ENABLED || vars.KAKAO_ENABLED }}
           KAKAO_REST_API_KEY: ${{ secrets.KAKAO_REST_API_KEY }}
           KAKAO_CLIENT_SECRET: ${{ secrets.KAKAO_CLIENT_SECRET }}
